@@ -69,6 +69,7 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
         private const string GetMachineNameQuery = @"{0}/api/os/machinename";
         private const string GetBatteryQuery = @"{0}/api/power/battery";
         private const string GetPowerStateQuery = @"{0}/api/power/state";
+        private const string GetThermalStateQuery = @"{0}/api/holographic/thermal/stage";
         private const string RestartDeviceQuery = @"{0}/api/control/restart";
         private const string ShutdownDeviceQuery = @"{0}/api/control/shutdown";
         private const string ProcessQuery = @"{0}/api/resourcemanager/processes";
@@ -168,7 +169,32 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
 
             return JsonUtility.FromJson<BatteryInfo>(response.ResponseBody);
         }
+        /// <summary>
+        /// Gets the <see cref="Microsoft.MixedReality.Toolkit.WindowsDevicePortal.ThermalInfo"/> of the target device.
+        /// </summary>
+        /// <returns><see cref="Microsoft.MixedReality.Toolkit.WindowsDevicePortal.ThermalInfo"/></returns>
+        public static async Task<ThermalInfo> GetThermalStateAsync(DeviceInfo targetDevice)
+        {
+            var isAuth = await EnsureAuthenticationAsync(targetDevice);
+            if (!isAuth) { return null; }
 
+            string query = string.Format(GetThermalStateQuery, FinalizeUrl(targetDevice.IP));
+            var response = await RestHelpers.Rest.GetAsync(query, targetDevice.Authorization, readResponseData: true, certificateHandler: DevicePortalCertificateHandler, disposeCertificateHandlerOnDispose: false);
+
+            if (!response.Successful)
+            {
+                if (response.ResponseCode == 403 && await RefreshCsrfTokenAsync(targetDevice))
+                {
+                    return await GetThermalStateAsync(targetDevice);
+                }
+
+                Debug.LogError(response.ResponseBody);
+                return null;
+            }
+
+            return JsonUtility.FromJson<ThermalInfo>(response.ResponseBody);
+        }
+        
         /// <summary>
         /// Gets the <see cref="Microsoft.MixedReality.Toolkit.WindowsDevicePortal.PowerStateInfo"/> of the target device.
         /// </summary>
@@ -560,10 +586,15 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
         public static async Task<bool> LaunchAppAsync(string packageName, DeviceInfo targetDevice, ApplicationInfo appInfo = null)
         {
             Debug.Assert(!string.IsNullOrEmpty(packageName));
-
+            bool isAuth = false;
             if (appInfo == null)
             {
                 appInfo = await GetApplicationInfoAsync(packageName, targetDevice);
+                if (appInfo != null) isAuth = true;
+            }
+            else
+            {
+                isAuth = await EnsureAuthenticationAsync(targetDevice);
             }
 
             if (appInfo == null)
@@ -571,8 +602,14 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
                 Debug.LogWarning($"Application '{packageName}' not found");
                 return false;
             }
-
             string query = $"{string.Format(AppQuery, FinalizeUrl(targetDevice.IP))}?appid={UnityWebRequest.EscapeURL(appInfo.PackageRelativeId.EncodeTo64())}&package={UnityWebRequest.EscapeURL(appInfo.PackageFullName)}";
+            if(!targetDevice.Authorization.ContainsKey("cookie"))
+            {
+                targetDevice.Authorization.Clear();
+                isAuth = await EnsureAuthenticationAsync(targetDevice);
+            }
+
+
             var response = await RestHelpers.Rest.PostAsync(query, targetDevice.Authorization,  readResponseData: true, certificateHandler: DevicePortalCertificateHandler, disposeCertificateHandlerOnDispose: false);
 
             if (!response.Successful)
@@ -603,9 +640,15 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
         {
             Debug.Assert(!string.IsNullOrEmpty(packageName));
 
+            bool isAuth = false;
             if (appInfo == null)
             {
                 appInfo = await GetApplicationInfoAsync(packageName, targetDevice);
+                if (appInfo != null) isAuth = true;
+            }
+            else
+            {
+                isAuth = await EnsureAuthenticationAsync(targetDevice);
             }
 
             if (appInfo == null)
@@ -615,6 +658,11 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
             }
 
             string query = $"{string.Format(AppQuery, FinalizeUrl(targetDevice.IP))}?package={UnityWebRequest.EscapeURL(appInfo.PackageFullName.EncodeTo64())}";
+            if (!targetDevice.Authorization.ContainsKey("cookie"))
+            {
+                targetDevice.Authorization.Clear();
+                isAuth = await EnsureAuthenticationAsync(targetDevice);
+            }
             Response response = await RestHelpers.Rest.DeleteAsync(query, targetDevice.Authorization,  readResponseData: true, certificateHandler: DevicePortalCertificateHandler, disposeCertificateHandlerOnDispose: false);
 
             if (!response.Successful)

@@ -70,6 +70,7 @@ namespace Microsoft.MixedReality.Toolkit.WindowsDevicePortal
         /// The last known battery state of the device.
         /// </summary>
         public BatteryInfo BatteryInfo { get; set; }
+        public ThermalInfo ThermalInfo { get; set; }
 
         /// <summary>
         /// The last known power state of the device.
